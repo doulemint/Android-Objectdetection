@@ -187,6 +187,8 @@ public class Camera2DetactionFragment extends Fragment
      * The {@link Size} of camera preview.
      */
     private Size mPreviewSize;
+    private int mPreviewWidth;
+    private int mPreviewHeight;
 
     /**
      * {@link CameraDevice.StateCallback} is called when {@link CameraDevice} changes its state.
@@ -321,23 +323,18 @@ public class Camera2DetactionFragment extends Fragment
      *
      * @param choices           The list of sizes that the camera supports for the intended output
      *                          class
-     * @param textureViewWidth  The width of the texture view relative to sensor coordinate
-     * @param textureViewHeight The height of the texture view relative to sensor coordinate
-     * @param maxWidth          The maximum width that can be chosen
-     * @param maxHeight         The maximum height that can be chosen
-     * @param aspectRatio       The aspect ratio
      * @return The optimal {@code Size}, or an arbitrary one if none were big enough
      */
-    private static Size chooseOptimalSize(Size[] choices, int textureViewWidth,
-            int textureViewHeight, int maxWidth, int maxHeight, Size aspectRatio) {
-        final int miniSize = Math.max(Math.min(DESIRED_PREVIEW_SIZE.getWidth(),DESIRED_PREVIEW_SIZE.getHeight()),MINIMUM_PREVIEW_SIZE);
+    private static Size chooseOptimalSize(Size[] choices) {
+        final int miniSize = Math.max(Math.min(DESIRED_PREVIEW_SIZE.getWidth(),DESIRED_PREVIEW_SIZE.getHeight())
+                ,MINIMUM_PREVIEW_SIZE);
 
         // Collect the supported resolutions that are at least as big as the preview Surface
         List<Size> bigEnough = new ArrayList<>();
         // Collect the supported resolutions that are smaller than the preview Surface
-        List<Size> notBigEnough = new ArrayList<>();
-        int w = aspectRatio.getWidth();
-        int h = aspectRatio.getHeight();
+//        List<Size> notBigEnough = new ArrayList<>();
+//        int w = aspectRatio.getWidth();
+//        int h = aspectRatio.getHeight();
         for (Size option : choices) {
             if (option.equals(DESIRED_PREVIEW_SIZE))
                 return DESIRED_PREVIEW_SIZE;
@@ -472,83 +469,40 @@ public class Camera2DetactionFragment extends Fragment
                 if (map == null) {
                     continue;
                 }
-
-                // For still image captures, we use the largest available size.
-                Size largest = Collections.max(
-                        Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
-                        new CompareSizesByArea());
-                mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
-                        ImageFormat.JPEG, /*maxImages*/2);
-
-                // Find out if we need to swap dimension to get the preview size relative to sensor
-                // coordinate.
-                int displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-                //noinspection ConstantConditions
                 mSensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-                boolean swappedDimensions = false;
-                switch (displayRotation) {
-                    case Surface.ROTATION_0:
-                    case Surface.ROTATION_180:
-                        if (mSensorOrientation == 90 || mSensorOrientation == 270) {
-                            swappedDimensions = true;
-                        }
-                        break;
-                    case Surface.ROTATION_90:
-                    case Surface.ROTATION_270:
-                        if (mSensorOrientation == 0 || mSensorOrientation == 180) {
-                            swappedDimensions = true;
-                        }
-                        break;
-                    default:
-                        Log.e(TAG, "Display rotation is invalid: " + displayRotation);
-                }
-
-                Point displaySize = new Point();
-                activity.getWindowManager().getDefaultDisplay().getSize(displaySize);
-                int rotatedPreviewWidth = width;
-                int rotatedPreviewHeight = height;
-                int maxPreviewWidth = displaySize.x;
-                int maxPreviewHeight = displaySize.y;
-
-                if (swappedDimensions) {
-                    rotatedPreviewWidth = height;
-                    rotatedPreviewHeight = width;
-                    maxPreviewWidth = displaySize.y;
-                    maxPreviewHeight = displaySize.x;
-                }
-
-                if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
-                    maxPreviewWidth = MAX_PREVIEW_WIDTH;
-                }
-
-                if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
-                    maxPreviewHeight = MAX_PREVIEW_HEIGHT;
-                }
-
                 // Danger, W.R.! Attempting to use too large a preview size could  exceed the camera
                 // bus' bandwidth limitation, resulting in gorgeous previews but the storage of
                 // garbage capture data.
-                mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class),
-                        rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth,
-                        maxPreviewHeight, largest);
+                mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class));
+                mPreviewWidth = mPreviewSize.getWidth();
+                mPreviewHeight = mPreviewSize.getHeight();
+
+
+                // For still image captures, we use the largest available size.
+//                Size largest = Collections.max(
+//                        Arrays.asList(map.getOutputSizes(ImageFormat.YUV_420_888)),
+//                        new CompareSizesByArea());
+//                mImageReader = ImageReader.newInstance(mPreviewWidth, mPreviewHeight,
+//                        ImageFormat.YUV_420_888, /*maxImages*/2);
+
 
                 LOGGER.i("Camera orientation relative to screen canvas: %d", mSensorOrientation);
 
-                LOGGER.i("Initializing at size %dx%d", mPreviewSize.getWidth(), mPreviewSize.getHeight());
+                LOGGER.i("Initializing at size %dx%d",mPreviewWidth , mPreviewHeight );
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 int orientation = getResources().getConfiguration().orientation;
                 if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
                     mTextureView.setAspectRatio(
-                            mPreviewSize.getWidth(), mPreviewSize.getHeight());
+                            mPreviewWidth, mPreviewHeight);
                 } else {
                     mTextureView.setAspectRatio(
-                            mPreviewSize.getHeight(), mPreviewSize.getWidth());
+                            mPreviewHeight, mPreviewWidth);
                 }
                 //
                 frameToCropTransform =
                         ImageUtils.getTransformationMatrix(
-                                mPreviewSize.getWidth(), mPreviewSize.getHeight(),
+                                mPreviewWidth, mPreviewHeight,
                                 INPUT_SIZE, INPUT_SIZE,
                                 mSensorOrientation, MAINTAIN_ASPECT);
 
@@ -658,7 +612,7 @@ public class Camera2DetactionFragment extends Fragment
             assert texture != null;
 
             // We configure the size of default buffer to be the size of camera preview we want.
-            texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
+            texture.setDefaultBufferSize(mPreviewWidth, mPreviewHeight);
 
             // This is the output Surface we need to start preview.
             Surface surface = new Surface(texture);
@@ -668,10 +622,10 @@ public class Camera2DetactionFragment extends Fragment
                     = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mPreviewRequestBuilder.addTarget(surface);
 
-            LOGGER.i("Opening camera preview: " + mPreviewSize.getWidth() + "x" + mPreviewSize.getHeight());
+            LOGGER.i("Opening camera preview: " + mPreviewWidth + "x" + mPreviewHeight);
 
-            mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(),
-                    ImageFormat.JPEG, 1);
+            mImageReader = ImageReader.newInstance(mPreviewWidth, mPreviewHeight,
+                    ImageFormat.YUV_420_888, 2);
 
             mImageReader.setOnImageAvailableListener(this, mBackgroundHandler);
             mPreviewRequestBuilder.addTarget(mImageReader.getSurface());
@@ -731,15 +685,15 @@ public class Camera2DetactionFragment extends Fragment
         int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
         Matrix matrix = new Matrix();
         RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
-        RectF bufferRect = new RectF(0, 0, mPreviewSize.getHeight(), mPreviewSize.getWidth());
+        RectF bufferRect = new RectF(0, 0, mPreviewHeight, mPreviewWidth);
         float centerX = viewRect.centerX();
         float centerY = viewRect.centerY();
         if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
             bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
             matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
             float scale = Math.max(
-                    (float) viewHeight / mPreviewSize.getHeight(),
-                    (float) viewWidth / mPreviewSize.getWidth());
+                    (float) viewHeight / mPreviewHeight,
+                    (float) viewWidth / mPreviewWidth);
             matrix.postScale(scale, scale, centerX, centerY);
             matrix.postRotate(90 * (rotation - 2), centerX, centerY);
         } else if (Surface.ROTATION_180 == rotation) {
@@ -778,7 +732,7 @@ public class Camera2DetactionFragment extends Fragment
             }
             LOGGER.e(ex.getMessage());
         }
-        LOGGER.i("ready to run tensirflow");
+        LOGGER.i("ready to run tensenflow");
         runInBackground(() -> {
             classifyFrame();
         });;
@@ -786,14 +740,10 @@ public class Camera2DetactionFragment extends Fragment
     }
 
     private void fillCroppedBitmap(Image image) {
-        final Image.Plane[] planes = image.getPlanes();
-        final ByteBuffer buffer = planes[0].getBuffer();
-        final byte[] data = new byte[buffer.capacity()];
-        buffer.get(data);
-        final Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
-        LOGGER.i("we got a bitmap from bytearray ");
-        new Canvas(croppedBitmap).drawBitmap(bitmap, frameToCropTransform, null);
-        LOGGER.i("finish drawing a croppedbitmap");
+        Bitmap rgbFrameBitmap = Bitmap.createBitmap(mPreviewWidth,mPreviewHeight,Bitmap.Config.ARGB_8888);
+        rgbFrameBitmap.setPixels(ImageUtils.convertYUVToARGB(image,mPreviewWidth,mPreviewHeight),
+                0,mPreviewWidth,0,0,mPreviewWidth,mPreviewHeight);
+        new Canvas(croppedBitmap).drawBitmap(rgbFrameBitmap,frameToCropTransform,null);
     }
 
 
@@ -892,6 +842,7 @@ public class Camera2DetactionFragment extends Fragment
         final long startTime = SystemClock.uptimeMillis();
         final List<Classifier.Recognition> results = detector.recognizeImage(croppedBitmap);
         long lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
+        LOGGER.i("processing time is"+lastProcessingTimeMs);
         showToast(lastProcessingTimeMs+"");
 
         final List<Classifier.Recognition> mappedRecognitions =
